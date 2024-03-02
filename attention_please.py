@@ -83,6 +83,7 @@ class mainFrame(wx.Frame):
         dlg = wx.MessageDialog( self, f"{dialogtext} elements copied to clibboard", "Copy", wx.OK)
         dlg.ShowModal() # Show it
         dlg.Destroy() # finally destroy it when finished.
+        event.Skip()
 
     def onClose(self,event):
         if event.CanVeto():
@@ -106,6 +107,7 @@ class mainFrame(wx.Frame):
             start_last_event = now - datetime.timedelta(seconds=1)
         delta = now - start_last_event
         self.worked_on_this.SetLabel(f"{int(delta.total_seconds()/60)} min")
+        event.Skip()
 
 if __name__ == '__main__':
     # When this module is run (not imported) then create the app, the
