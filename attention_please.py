@@ -94,13 +94,16 @@ class mainFrame(wx.Frame):
         self.Bind(wx.EVT_TIMER, self.onTimer, self.timer)        
         self.timer.Start(10000)
 
-
         self.current_todo = wx.TextCtrl(self.panel,style=wx.TE_PROCESS_ENTER)
+        self.current_todo.AutoComplete(self.save.get_known_todos())
         self.current_todo.Bind(wx.EVT_TEXT_ENTER, self.onEnter)
         
-        self.worked_on_this = wx.StaticText(self.panel, label=f"{self.current_todo_text}\n0 min", style=wx.ALIGN_CENTER)
+        self.worked_on_this = wx.StaticText(self.panel, label=f"{self.current_todo_text}", style=wx.ALIGN_CENTER)
         self.worked_on_this.SetFont(big_font)
         self.worked_on_this.Bind(wx.EVT_LEFT_UP, self.onClick)
+
+        self.worked_on_this_time = wx.StaticText(self.panel, label="0 min", style=wx.ALIGN_CENTER)
+        self.worked_on_this_time.Bind(wx.EVT_LEFT_UP, self.onClick)
 
         self.copyButton = wx.Button(self.panel, label="Copy")
         self.copyButton.Bind(wx.EVT_BUTTON, self.onCopyButton)
@@ -108,16 +111,20 @@ class mainFrame(wx.Frame):
         self.main_sizer = wx.BoxSizer(wx.VERTICAL)
         self.panel.SetSizer(self.main_sizer)
         self.main_sizer.Add(self.current_todo, wx.SizerFlags().Expand().Border(wx.ALL, 10))
-        self.main_sizer.Add(self.worked_on_this, 0, wx.ALIGN_CENTER_HORIZONTAL | wx.ALL)
+        self.main_sizer.AddSpacer(10)
+        self.main_sizer.Add(self.worked_on_this, 0, wx.ALIGN_CENTER_HORIZONTAL | wx.ALL, border=10)
+        self.main_sizer.Add(self.worked_on_this_time, 0, wx.ALIGN_CENTER_HORIZONTAL | wx.ALL, border=10)
+        self.main_sizer.AddSpacer(10)
         self.main_sizer.Add(self.copyButton, wx.SizerFlags().Expand().Border(wx.ALL, 10))
-
-
 
     def onEnter(self,event):
         if self.current_todo_text != self.current_todo.GetLineText(0):
             self.current_todo_text = self.current_todo.GetLineText(0)
             self.save.set_todo(self.current_todo_text)
-            self.worked_on_this.SetLabel(f"{self.current_todo_text}\n0 min")
+            self.worked_on_this.SetLabel(f"{self.current_todo_text}")
+            self.worked_on_this_time.SetLabel("0 min")
+            self.current_todo.AutoComplete(self.save.get_known_todos())
+            #self.main_sizer.SetSizeHints(self)
         event.Skip()
 
     def onCopyButton(self,event):
@@ -188,7 +195,7 @@ class mainFrame(wx.Frame):
         else:
             start_last_event = now - datetime.timedelta(seconds=1)
         delta = now - start_last_event
-        self.worked_on_this.SetLabel(f"{self.current_todo_text}\n{int(delta.total_seconds()/60)} min")
+        self.worked_on_this_time.SetLabel(f"{int(delta.total_seconds()/60)} min")
         event.Skip()
 
 if __name__ == '__main__':
