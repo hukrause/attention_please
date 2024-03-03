@@ -83,6 +83,7 @@ class mainFrame(wx.Frame):
         self.save = Persistency()
         self.current_todo_text = ""
         self.elements_copied_up_to_now = 0
+        self.local = pytz.timezone(datetime.datetime.now().astimezone().tzname())
 
         self.Bind(wx.EVT_CLOSE, self.onClose)
 
@@ -107,7 +108,7 @@ class mainFrame(wx.Frame):
         self.main_sizer = wx.BoxSizer(wx.VERTICAL)
         self.panel.SetSizer(self.main_sizer)
         self.main_sizer.Add(self.current_todo, wx.SizerFlags().Expand().Border(wx.ALL, 10))
-        self.main_sizer.Add(self.worked_on_this, 0, wx.ALIGN_CENTER_HORIZONTAL | wx.ALL, border=10)
+        self.main_sizer.Add(self.worked_on_this, 0, wx.ALIGN_CENTER_HORIZONTAL | wx.ALL)
         self.main_sizer.Add(self.copyButton, wx.SizerFlags().Expand().Border(wx.ALL, 10))
 
 
@@ -132,16 +133,20 @@ class mainFrame(wx.Frame):
                 last_todo = element['todo_text']
                 first_flag = False
             else:
-                day = element['timestamp'].strftime('%d')
-                starttime = start_timestamp.strftime('%H%M')
-                endtime = element['timestamp'].strftime('%H%M')
+                day = element['timestamp'].astimezone(self.local).strftime('%d')
+                starttime = start_timestamp.astimezone(self.local).strftime('%H%M')
+                endtime = element['timestamp'].astimezone(self.local).strftime('%H%M')
                 delta = element['timestamp'] - start_timestamp
                 todo = last_todo
                 out += f"{day}\t{starttime}\t{endtime}\t{delta.total_seconds()/3600:.2f}\t{todo}\r\n"
                 start_timestamp = element['timestamp']
                 last_todo = element['todo_text']
         delta = now - start_timestamp
-        out += f"{start_timestamp.strftime('%d')}\t{start_timestamp.strftime('%H%M')}\t{now.strftime('%H%M')}\t{delta.total_seconds()/3600:.2f}\t{last_todo}"
+        out += f"{start_timestamp.astimezone(self.local).strftime('%d')}"
+        out += f"\t{start_timestamp.astimezone(self.local).strftime('%H%M')}"
+        out += f"\t{now.astimezone(self.local).strftime('%H%M')}"
+        out += f"\t{delta.total_seconds()/3600:.2f}"
+        out += f"\t{last_todo}"
         if len(todo_array) == 0:
             dialogtext = 'No'
         else:
