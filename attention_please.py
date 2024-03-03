@@ -2,24 +2,67 @@
 
 import wx
 import datetime
+import pytz
 import sqlite3
 import platform
 import os
 
-class persistency():
+DB_VERSION = '0.1.0'
+
+def versiontuple(v):
+    return tuple(map(int, (v.split("."))))
+
+class Persistency():
     def __init__(self):
         dbpath = self.__create_db_path()
-        self.datacon = sqlite3.connect(os.path.join(dbpath,'timeline.db'))
-        self.datacur = self.datacon.cursor()
+        self.con = sqlite3.connect(os.path.join(dbpath,'timeline.db'))
+        self.cur = self.con.cursor()
+        self.cur.execute("PRAGMA foreign_keys = ON")
+        self.cur.execute("PRAGMA case_sensitive_like=OFF")
+        self.cur.arraysize = 100
         # initialize db as needed
-        self.__init_data_db()
+        self.__init_db()
 
-    def __init_data_db(self):
-        res = datacur.execute("SELECT name FROM sqlite_master WHERE name='version'")
+    def __init_db(self):
+        res = self.cur.execute("SELECT name FROM sqlite_master WHERE name='version'")
         if res.fetchone() is None:
-            pass
-            
+            with open('db_init.sql', 'r') as sql_file:
+                sql_script = sql_file.read()
+                self.cur.executescript(sql_script)
+            self.con.commit()
+        else:
+            res = self.cur.execute("SELECT version FROM version ORDER BY deploy_time DESC limit 1")
+            if versiontuple(res.fetchone()[0]) < versiontuple(DB_VERSION):
+                #TODO: implement run update script
+                pass
 
+    def get_known_todos(self):
+        res = self.cur.execute("SELECT todo_text FROM todo ORDER by todo_text")
+        todos = []
+        for i in res.fetchall():
+            todos.append(i[0])
+        return todos
+
+    def get_todo_array(self):
+        now = datetime.datetime.now().strftime('%Y-%m-%d 00:00:00')
+        todo_array = []
+        res = self.cur.execute("SELECT ti.timestamp, t.todo_text FROM time as ti join todo as t ON t.id = ti.todo_id where ti.timestamp >= ?", [now])
+        for i in res:
+            timestamp = pytz.utc.localize(datetime.datetime.fromisoformat(i[0]))
+            todo_array.append({'timestamp': timestamp, 'todo_text': i[1]})
+        return todo_array
+
+    def set_todo(self,todo_text):
+        res = self.cur.execute("SELECT id FROM todo WHERE todo_text like ?",[todo_text])
+        todo_id = res.fetchone()
+        if todo_id is None:
+            res = self.cur.execute("INSERT INTO todo VALUES (NULL, ?)",[todo_text])
+            todo_id = self.cur.lastrowid
+            self.con.commit()
+        else:
+            todo_id = todo_id[0]
+        res = self.cur.execute("INSERT INTO time VALUES (NULL,DATETIME('now'),?)",[todo_id])
+        self.con.commit()
 
     def __create_db_path(self):
         iam_running_on = platform.system()
@@ -29,16 +72,15 @@ class persistency():
         elif iam_running_on == 'Windows':
             path = os.path.join(os.environ['APPDATA'],'attention_please')
         # create path if not exists
-        os.makedirs(path)
+        os.makedirs(path,exist_ok=True)
         return path
-
 
 class mainFrame(wx.Frame):
     def __init__(self, *args, **kw):
         super(mainFrame, self).__init__(*args, **kw)
         big_font = wx.Font(18, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD)
 
-        self.todo_array = []
+        self.save = Persistency()
         self.current_todo_text = ""
         self.elements_copied_up_to_now = 0
 
@@ -71,20 +113,20 @@ class mainFrame(wx.Frame):
 
 
     def onEnter(self,event):
-        now = datetime.datetime.now()
         if self.current_todo_text != self.current_todo.GetLineText(0):
-            self.todo_array.append({'timestamp': now, 'todo_text': self.current_todo.GetLineText(0)})
             self.current_todo_text = self.current_todo.GetLineText(0)
+            self.save.set_todo(self.current_todo_text)
             self.worked_on_this.SetLabel(f"{self.current_todo_text}\n0 min")
         event.Skip()
 
     def onCopyButton(self,event):
-        now = datetime.datetime.now()
+        now = datetime.datetime.now(datetime.timezone.utc)
         out = "day\tstarttime\tendtime\tdelta\ttodo\r\n"
         first_flag = True
         start_timestamp = now
         last_todo = "nothing"
-        for element in self.todo_array:
+        todo_array = self.save.get_todo_array()
+        for element in todo_array:
             if first_flag:
                 start_timestamp = element['timestamp']
                 last_todo = element['todo_text']
@@ -100,10 +142,10 @@ class mainFrame(wx.Frame):
                 last_todo = element['todo_text']
         delta = now - start_timestamp
         out += f"{start_timestamp.strftime('%d')}\t{start_timestamp.strftime('%H%M')}\t{now.strftime('%H%M')}\t{delta.total_seconds()/3600:.2f}\t{last_todo}"
-        if len(self.todo_array) == 0:
+        if len(todo_array) == 0:
             dialogtext = 'No'
         else:
-            dialogtext = f"{len(self.todo_array)}"
+            dialogtext = f"{len(todo_array)}"
             if wx.TheClipboard.Open():
                 wx.TheClipboard.SetData(wx.TextDataObject(out))
                 wx.TheClipboard.Close()
@@ -111,13 +153,14 @@ class mainFrame(wx.Frame):
         dlg = wx.MessageDialog( self, f"{dialogtext} elements copied to clibboard", "Copy", wx.OK)
         dlg.ShowModal() # Show it
         dlg.Destroy() # finally destroy it when finished.
-        self.elements_copied_up_to_now = len(self.todo_array)
+        self.elements_copied_up_to_now = len(todo_array)
         event.Skip()
 
     def onClose(self,event):
         if event.CanVeto():
-            if self.elements_copied_up_to_now < len(self.todo_array):
-                out = f"Do you want to close this App?\nThere are {len(self.todo_array) - self.elements_copied_up_to_now} task(s) not copied up to now."
+            todo_array = self.save.get_todo_array()
+            if self.elements_copied_up_to_now < len(todo_array):
+                out = f"Do you want to close this App?\nThere are {len(todo_array) - self.elements_copied_up_to_now} task(s) not copied up to now."
             else:
                 out = "Do you want to close this App?"
             if wx.MessageBox(out,
@@ -133,9 +176,10 @@ class mainFrame(wx.Frame):
         event.Skip()
     
     def onTimer(self,event):
-        now = datetime.datetime.now()
-        if len(self.todo_array) >0:
-            start_last_event = self.todo_array[-1]['timestamp']
+        now = datetime.datetime.now(datetime.timezone.utc)
+        todo_array = self.save.get_todo_array()
+        if len(todo_array) >0:
+            start_last_event = todo_array[-1]['timestamp']
         else:
             start_last_event = now - datetime.timedelta(seconds=1)
         delta = now - start_last_event
@@ -143,8 +187,6 @@ class mainFrame(wx.Frame):
         event.Skip()
 
 if __name__ == '__main__':
-    # When this module is run (not imported) then create the app, the
-    # frame, show it, and start the event loop.
     app = wx.App()
     fOnTop = wx.STAY_ON_TOP or 0
 
