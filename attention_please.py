@@ -9,6 +9,18 @@ import os
 
 DB_VERSION = '0.1.0'
 
+DB_INIT = """
+CREATE TABLE version(id INTEGER PRIMARY KEY AUTOINCREMENT, 
+version TEXT NOT NULL UNIQUE, 
+deploy_time DATETIME);
+INSERT INTO version VALUES (NULL,'0.1.0',DATETIME('now'));
+CREATE TABLE time(id INTEGER PRIMARY KEY AUTOINCREMENT, 
+timestamp DATETIME, 
+todo_id INTEGER NOT NULL,
+FOREIGN KEY(todo_id) REFERENCES todo(id));
+CREATE TABLE todo(id INTEGER PRIMARY KEY AUTOINCREMENT, todo_text TEXT NOT NULL UNIQUE);
+"""
+
 def versiontuple(v):
     return tuple(map(int, (v.split("."))))
 
@@ -26,9 +38,7 @@ class Persistency():
     def __init_db(self):
         res = self.cur.execute("SELECT name FROM sqlite_master WHERE name='version'")
         if res.fetchone() is None:
-            with open('db_init.sql', 'r') as sql_file:
-                sql_script = sql_file.read()
-                self.cur.executescript(sql_script)
+            self.cur.executescript(DB_INIT)
             self.con.commit()
         else:
             res = self.cur.execute("SELECT version FROM version ORDER BY deploy_time DESC limit 1")
@@ -83,7 +93,11 @@ class mainFrame(wx.Frame):
         self.save = Persistency()
         self.current_todo_text = ""
         self.elements_copied_up_to_now = 0
-        self.local = pytz.timezone(datetime.datetime.now().astimezone().tzname())
+        if platform.system() == 'Windows':
+            from tzlocal.win32 import get_localzone_name
+            self.local = pytz.timezone(get_localzone_name())
+        else:
+            self.local = pytz.timezone(datetime.datetime.now().astimezone().tzname())
 
         self.Bind(wx.EVT_CLOSE, self.onClose)
 
@@ -110,12 +124,12 @@ class mainFrame(wx.Frame):
 
         self.main_sizer = wx.BoxSizer(wx.VERTICAL)
         self.panel.SetSizer(self.main_sizer)
-        self.main_sizer.Add(self.current_todo, wx.SizerFlags().Expand().Border(wx.ALL, 10))
-        self.main_sizer.AddSpacer(10)
-        self.main_sizer.Add(self.worked_on_this, 0, wx.ALIGN_CENTER_HORIZONTAL | wx.ALL, border=10)
-        self.main_sizer.Add(self.worked_on_this_time, 0, wx.ALIGN_CENTER_HORIZONTAL | wx.ALL, border=10)
-        self.main_sizer.AddSpacer(10)
-        self.main_sizer.Add(self.copyButton, wx.SizerFlags().Expand().Border(wx.ALL, 10))
+        self.main_sizer.Add(self.current_todo, wx.SizerFlags().Expand().Border(wx.ALL, 5))
+        #self.main_sizer.AddSpacer(10)
+        self.main_sizer.Add(self.worked_on_this, 1, wx.ALIGN_CENTER_HORIZONTAL | wx.ALL, border=1)
+        self.main_sizer.Add(self.worked_on_this_time, 1, wx.ALIGN_CENTER_HORIZONTAL | wx.ALL, border=1)
+        #self.main_sizer.AddSpacer(10)
+        self.main_sizer.Add(self.copyButton, wx.SizerFlags().Expand().Border(wx.ALL, 1))
 
     def onEnter(self,event):
         if self.current_todo_text != self.current_todo.GetLineText(0):
@@ -124,7 +138,7 @@ class mainFrame(wx.Frame):
             self.worked_on_this.SetLabel(f"{self.current_todo_text}")
             self.worked_on_this_time.SetLabel("0 min")
             self.current_todo.AutoComplete(self.save.get_known_todos())
-            #self.main_sizer.SetSizeHints(self)
+            self.main_sizer.Layout()
         event.Skip()
 
     def onCopyButton(self,event):
