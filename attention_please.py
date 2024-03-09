@@ -6,6 +6,7 @@ import pytz
 import sqlite3
 import platform
 import os
+import yaml
 
 DB_VERSION = '0.1.0'
 
@@ -21,12 +22,17 @@ FOREIGN KEY(todo_id) REFERENCES todo(id));
 CREATE TABLE todo(id INTEGER PRIMARY KEY AUTOINCREMENT, todo_text TEXT NOT NULL UNIQUE);
 """
 
+OPTION_INIT = """
+bg_color: [239,240,241]
+"""
+
 def versiontuple(v):
     return tuple(map(int, (v.split("."))))
 
+
 class Persistency():
     def __init__(self):
-        dbpath = self.__create_db_path()
+        dbpath = self.__create_path()
         self.con = sqlite3.connect(os.path.join(dbpath,'timeline.db'))
         self.cur = self.con.cursor()
         self.cur.execute("PRAGMA foreign_keys = ON")
@@ -74,10 +80,10 @@ class Persistency():
         res = self.cur.execute("INSERT INTO time VALUES (NULL,DATETIME('now'),?)",[todo_id])
         self.con.commit()
 
-    def __create_db_path(self):
+    def __create_path(self):
         iam_running_on = platform.system()
         if iam_running_on == 'Linux':
-            xdg_data_home = os.environ.get('XDG_DATA_HOME',os.path.join(os.environ['HOME'],'.local', 'share'))
+            xdg_data_home = os.environ.get('$XDG_DATA_HOME',os.path.join(os.environ['HOME'],'.local/share'))
             path = os.path.join(xdg_data_home, 'attention_please')
         elif iam_running_on == 'Windows':
             path = os.path.join(os.environ['APPDATA'],'attention_please')
@@ -85,11 +91,51 @@ class Persistency():
         os.makedirs(path,exist_ok=True)
         return path
 
+class Settings():
+    def __init__(self):
+        options_path = self.__create_path()
+        self.options_file = os.path.join(options_path,'options.yml')
+        default = yaml.safe_load(OPTION_INIT)
+        if os.path.exists(self.options_file):
+            with open(self.options_file, 'r') as of:
+                self.options = default | yaml.safe_load(of)
+        else:
+            self.options = default
+        self.write_options()
+
+    def write_options(self):
+        with open(self.options_file,'w') as of:
+            yaml.dump(self.options, of)
+
+    def get(self,key):
+        if key in self.options:
+            return self.options[key]
+        else:
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{key}'")
+    
+    def set(self,key,value):
+        if key in self.options:
+            self.options[key] = value
+        else:
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{key}'")
+
+    def __create_path(self):
+        iam_running_on = platform.system()
+        if iam_running_on == 'Linux':
+            xdg_data_home = os.environ.get('$XDG_CONFIG_HOME',os.path.join(os.environ['HOME'],'.config'))
+            path = os.path.join(xdg_data_home, 'attention_please')
+        elif iam_running_on == 'Windows':
+            path = os.path.join(os.environ['APPDATA'],'attention_please')
+        # create path if not exists
+        os.makedirs(path,exist_ok=True)
+        return path
+
+
 class mainFrame(wx.Frame):
     def __init__(self, *args, **kw):
         super(mainFrame, self).__init__(*args, **kw)
         big_font = wx.Font(18, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD)
-
+        self.opt = Settings()
         self.save = Persistency()
         self.current_todo_text = ""
         self.elements_copied_up_to_now = 0
@@ -103,6 +149,7 @@ class mainFrame(wx.Frame):
 
         self.panel = wx.Panel(self)
         self.panel.Bind(wx.EVT_LEFT_UP, self.onClick)
+        self.panel.SetBackgroundColour( wx.Colour( self.opt.get('bg_color') ) )
 
         self.timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, self.onTimer, self.timer)        
