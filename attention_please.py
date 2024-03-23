@@ -137,7 +137,8 @@ class mainFrame(wx.Frame):
         big_font = wx.Font(18, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD)
         self.opt = Settings()
         self.save = Persistency()
-        self.current_todo_text = ""
+        self.current_todo_text = "start"
+        self.save.set_todo(self.current_todo_text)
         self.elements_copied_up_to_now = 0
         if platform.system() == 'Windows':
             from tzlocal.win32 import get_localzone_name
@@ -146,10 +147,10 @@ class mainFrame(wx.Frame):
             self.local = pytz.timezone(datetime.datetime.now().astimezone().tzname())
 
         self.Bind(wx.EVT_CLOSE, self.onClose)
+        self.Bind(wx.EVT_ACTIVATE,self.onActivate)
 
         self.panel = wx.Panel(self)
         self.panel.Bind(wx.EVT_LEFT_UP, self.onClick)
-        self.panel.SetBackgroundColour( wx.Colour( self.opt.get('bg_color') ) )
 
         self.timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, self.onTimer, self.timer)        
@@ -159,9 +160,10 @@ class mainFrame(wx.Frame):
         self.current_todo.AutoComplete(self.save.get_known_todos())
         self.current_todo.Bind(wx.EVT_TEXT_ENTER, self.onEnter)
         
-        self.worked_on_this = wx.StaticText(self.panel, label=f"{self.current_todo_text}", style=wx.ALIGN_CENTER)
+        self.worked_on_this = wx.StaticText(self.panel, label=f"{('{: ^40}'.format(self.current_todo_text))}", style=wx.ALIGN_CENTER)
         self.worked_on_this.SetFont(big_font)
         self.worked_on_this.Bind(wx.EVT_LEFT_UP, self.onClick)
+        self.worked_on_this.SetBackgroundColour( wx.Colour( self.opt.get('bg_color') ) )
 
         self.worked_on_this_time = wx.StaticText(self.panel, label="0 min", style=wx.ALIGN_CENTER)
         self.worked_on_this_time.Bind(wx.EVT_LEFT_UP, self.onClick)
@@ -169,20 +171,35 @@ class mainFrame(wx.Frame):
         self.copyButton = wx.Button(self.panel, label="Copy")
         self.copyButton.Bind(wx.EVT_BUTTON, self.onCopyButton)
 
+        self.settingsButton = wx.Button(self.panel, label="Settings")
+        self.settingsButton.Bind(wx.EVT_BUTTON, self.onSettingsButton)
+
+        self.bottom_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        self.top_sizer = wx.BoxSizer(wx.VERTICAL)
+        self.mid_sizer = wx.BoxSizer(wx.VERTICAL)
         self.main_sizer = wx.BoxSizer(wx.VERTICAL)
-        self.panel.SetSizer(self.main_sizer)
-        self.main_sizer.Add(self.current_todo, wx.SizerFlags().Expand().Border(wx.ALL, 5))
-        #self.main_sizer.AddSpacer(10)
-        self.main_sizer.Add(self.worked_on_this, 1, wx.ALIGN_CENTER_HORIZONTAL | wx.ALL, border=1)
-        self.main_sizer.Add(self.worked_on_this_time, 1, wx.ALIGN_CENTER_HORIZONTAL | wx.ALL, border=1)
-        #self.main_sizer.AddSpacer(10)
-        self.main_sizer.Add(self.copyButton, wx.SizerFlags().Expand().Border(wx.ALL, 1))
+
+        self.top_sizer.Add(self.worked_on_this, 1, wx.ALL | wx.EXPAND, border=1)
+        self.mid_sizer.Add(self.current_todo, 1, wx.ALL | wx.EXPAND, border=5)
+        
+        self.bottom_sizer.Add(self.settingsButton,  1, wx.ALL | wx.EXPAND, border=1)
+        self.bottom_sizer.Add(self.worked_on_this_time, 1, wx.ALL | wx.EXPAND, border=5)
+        self.bottom_sizer.Add(self.copyButton,  1, wx.ALL | wx.EXPAND, border=1)
+
+        self.main_sizer.Add(self.top_sizer, 1, wx.TOP | wx.EXPAND, border=0)
+        self.main_sizer.Add(self.mid_sizer,  1, wx.ALL | wx.EXPAND, border=1)
+        self.main_sizer.Add(self.bottom_sizer,  1, wx.BOTTOM | wx.EXPAND, border=1)
+        
+        #self.panel.SetSizer(self.main_sizer)
+        self.panel.SetSizerAndFit(self.main_sizer)
+        self.panel.Layout()
+
 
     def onEnter(self,event):
         if self.current_todo_text != self.current_todo.GetLineText(0):
             self.current_todo_text = self.current_todo.GetLineText(0)
             self.save.set_todo(self.current_todo_text)
-            self.worked_on_this.SetLabel(f"{self.current_todo_text}")
+            self.worked_on_this.SetLabel(f"{('{: ^40}'.format(self.current_todo_text))}")
             self.worked_on_this_time.SetLabel("0 min")
             self.current_todo.AutoComplete(self.save.get_known_todos())
             self.main_sizer.Layout()
@@ -205,7 +222,7 @@ class mainFrame(wx.Frame):
                 starttime = start_timestamp.astimezone(self.local).strftime('%H%M')
                 endtime = element['timestamp'].astimezone(self.local).strftime('%H%M')
                 delta = element['timestamp'] - start_timestamp
-                todo = last_todo
+                todo = last_todoself.Layout()
                 out += f"{day}\t{starttime}\t{endtime}\t{delta.total_seconds()/3600:.2f}\t{todo}\r\n"
                 start_timestamp = element['timestamp']
                 last_todo = element['todo_text']
@@ -257,6 +274,39 @@ class mainFrame(wx.Frame):
             start_last_event = now - datetime.timedelta(seconds=1)
         delta = now - start_last_event
         self.worked_on_this_time.SetLabel(f"{int(delta.total_seconds()/60)} min")
+        self.panel.Layout()
+        event.Skip()
+    
+    def onActivate(self,event):
+        if event.GetActive():
+            #self.settingsButton.Show()
+            #self.copyButton.Show()
+            #self.worked_on_this_time.Show()
+            #self.current_todo.Show()
+            self.main_sizer.Show(self.bottom_sizer)
+            self.main_sizer.Show(self.mid_sizer)
+        else:
+            #self.settingsButton.Hide()
+            #self.copyButton.Hide()
+            #self.worked_on_this_time.Hide()
+            #self.current_todo.Hide()
+            self.main_sizer.Hide(self.bottom_sizer)
+            self.main_sizer.Hide(self.mid_sizer)
+        minsize = self.main_sizer.GetMinSize()
+        #self.panel.SetMinSize(minsize)
+        #self.main_sizer.FitInside(self.panel)
+        #self.main_sizer.Layout()
+        #self.panel.Fit()
+        #self.panel.Layout()
+        #self.panel.GetSizer().Layout()
+        #self.panel.GetParent().Layout()
+        #self.GetTopLevelParent().Layout()
+        #self.GetTopLevelParent().FitInside()
+        self.GetTopLevelParent().SetMinSize(minsize)
+
+        event.Skip()
+
+    def onSettingsButton(self,event):
         event.Skip()
 
 if __name__ == '__main__':
