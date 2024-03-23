@@ -269,7 +269,6 @@ class mainPanel(wx.Panel):
 
     def onSettingsButton(self,event):
         self.parent.settings_panel.main_sizer.Show(self.parent.settings_panel.bg_color_sizer)
-        self.parent.resize()
         event.Skip()
 
 class settingsPanel(wx.Panel):
@@ -284,14 +283,15 @@ class settingsPanel(wx.Panel):
 
         # elemets
         self.color_picker = wx.ColourPickerCtrl(self, id=-1, colour=wx.RED,name="colourpicker")
+        self.color_picker.Bind(wx.EVT_COLOURPICKER_CHANGED,self.onColorClick)
 
         self.bg_color_sizer.Add(self.color_picker,0,wx.ALL | wx.EXPAND, border=1)
         self.main_sizer.Add(self.bg_color_sizer,  1, wx.ALL | wx.EXPAND, border=1)
         self.main_sizer.Hide(self.bg_color_sizer)
-
-
-        
-        
+    
+    def onColorClick(self,event):
+        self.settings.set('bg_color',self.color_picker.GetColour())
+        event.Skip()
 
 class mainFrame(wx.Frame):
     def __init__(self, *args, **kw):
@@ -302,8 +302,8 @@ class mainFrame(wx.Frame):
         self.main_sizer = wx.BoxSizer(wx.VERTICAL)
         self.settings_panel = settingsPanel(self,settings=self.settings)
         self.main_panel = mainPanel(self,settings=self.settings)
-        self.main_sizer.Add(self.main_panel, 1, wx.ALL | wx.EXPAND, border=1))
-        self.main_sizer.Add(self.settings_panel, 1, wx.ALL | wx.EXPAND, border=1))
+        self.main_sizer.Add(self.main_panel, 1, wx.ALL | wx.EXPAND, border=1)
+        self.main_sizer.Add(self.settings_panel, 1, wx.ALL | wx.EXPAND, border=1)
 
     
     def onClose(self,event):
@@ -328,7 +328,7 @@ class mainFrame(wx.Frame):
             self.main_panel.main_sizer.Hide(self.main_panel.bottom_sizer)
             self.main_panel.main_sizer.Hide(self.main_panel.mid_sizer)
         minsize = self.main_panel.main_sizer.GetMinSize()
-        self.resize(minsize)
+        self.resize()
         event.Skip()
 
     def resize(self):
@@ -336,7 +336,7 @@ class mainFrame(wx.Frame):
         self.main_panel.Fit()
         self.main_panel.Layout()
         # TODO: size object with add?
-        self.SetMinSize(minsize)
+        self.SetMinSize(self.main_panel.main_sizer.GetMinSize())
         self.Fit()
         self.Layout()
 
