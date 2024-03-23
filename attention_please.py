@@ -22,7 +22,7 @@ FOREIGN KEY(todo_id) REFERENCES todo(id));
 CREATE TABLE todo(id INTEGER PRIMARY KEY AUTOINCREMENT, todo_text TEXT NOT NULL UNIQUE);
 """
 
-OPTION_INIT = """
+SETTINGS_INIT = """
 bg_color: [239,240,241]
 """
 
@@ -93,29 +93,29 @@ class Persistency():
 
 class Settings():
     def __init__(self):
-        options_path = self.__create_path()
-        self.options_file = os.path.join(options_path,'options.yml')
-        default = yaml.safe_load(OPTION_INIT)
-        if os.path.exists(self.options_file):
-            with open(self.options_file, 'r') as of:
-                self.options = default | yaml.safe_load(of)
+        settings_path = self.__create_path()
+        self.settings_file = os.path.join(settings_path,'settings.yml')
+        default = yaml.safe_load(SETTINGS_INIT)
+        if os.path.exists(self.settings_file):
+            with open(self.settings_file, 'r') as of:
+                self.settings = default | yaml.safe_load(of)
         else:
-            self.options = default
-        self.write_options()
+            self.settings = default
+        self.write_settings()
 
-    def write_options(self):
-        with open(self.options_file,'w') as of:
-            yaml.dump(self.options, of)
+    def write_settings(self):
+        with open(self.settings_file,'w') as of:
+            yaml.dump(self.settings, of)
 
     def get(self,key):
-        if key in self.options:
-            return self.options[key]
+        if key in self.settings:
+            return self.settings[key]
         else:
             raise AttributeError(f"'{type(self).__name__}' object has no attribute '{key}'")
     
     def set(self,key,value):
-        if key in self.options:
-            self.options[key] = value
+        if key in self.settings:
+            self.settings[key] = value
         else:
             raise AttributeError(f"'{type(self).__name__}' object has no attribute '{key}'")
 
@@ -130,12 +130,12 @@ class Settings():
         os.makedirs(path,exist_ok=True)
         return path
 
-
-class mainFrame(wx.Frame):
+class mainPanel(wx.Panel):
     def __init__(self, *args, **kw):
-        super(mainFrame, self).__init__(*args, **kw)
+        self.settings = kw.pop('settings',None)
+        super(mainPanel, self).__init__(*args, **kw)
+        self.parent = self.GetParent()
         big_font = wx.Font(18, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD)
-        self.opt = Settings()
         self.save = Persistency()
         self.current_todo_text = "start"
         self.save.set_todo(self.current_todo_text)
@@ -146,32 +146,28 @@ class mainFrame(wx.Frame):
         else:
             self.local = pytz.timezone(datetime.datetime.now().astimezone().tzname())
 
-        self.Bind(wx.EVT_CLOSE, self.onClose)
-        self.Bind(wx.EVT_ACTIVATE,self.onActivate)
-
-        self.panel = wx.Panel(self)
-        self.panel.Bind(wx.EVT_LEFT_UP, self.onClick)
+        self.Bind(wx.EVT_LEFT_UP, self.onClick)
 
         self.timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, self.onTimer, self.timer)        
         self.timer.Start(10000)
 
-        self.current_todo = wx.TextCtrl(self.panel,style=wx.TE_PROCESS_ENTER)
+        self.current_todo = wx.TextCtrl(self,style=wx.TE_PROCESS_ENTER)
         self.current_todo.AutoComplete(self.save.get_known_todos())
         self.current_todo.Bind(wx.EVT_TEXT_ENTER, self.onEnter)
         
-        self.worked_on_this = wx.StaticText(self.panel, label=f"{('{: ^40}'.format(self.current_todo_text))}", style=wx.ALIGN_CENTER)
+        self.worked_on_this = wx.StaticText(self, label=f"{('{: ^40}'.format(self.current_todo_text))}", style=wx.ALIGN_CENTER)
         self.worked_on_this.SetFont(big_font)
         self.worked_on_this.Bind(wx.EVT_LEFT_UP, self.onClick)
-        self.worked_on_this.SetBackgroundColour( wx.Colour( self.opt.get('bg_color') ) )
+        self.worked_on_this.SetBackgroundColour( wx.Colour( self.settings.get('bg_color') ) )
 
-        self.worked_on_this_time = wx.StaticText(self.panel, label="0 min", style=wx.ALIGN_CENTER)
+        self.worked_on_this_time = wx.StaticText(self, label="0 min", style=wx.ALIGN_CENTER)
         self.worked_on_this_time.Bind(wx.EVT_LEFT_UP, self.onClick)
 
-        self.copyButton = wx.Button(self.panel, label="Copy")
+        self.copyButton = wx.Button(self, label="Copy")
         self.copyButton.Bind(wx.EVT_BUTTON, self.onCopyButton)
 
-        self.settingsButton = wx.Button(self.panel, label="Settings")
+        self.settingsButton = wx.Button(self, label="Settings")
         self.settingsButton.Bind(wx.EVT_BUTTON, self.onSettingsButton)
 
         self.bottom_sizer = wx.BoxSizer(wx.HORIZONTAL)
@@ -183,16 +179,15 @@ class mainFrame(wx.Frame):
         self.mid_sizer.Add(self.current_todo, 1, wx.ALL | wx.EXPAND, border=5)
         
         self.bottom_sizer.Add(self.settingsButton,  1, wx.ALL | wx.EXPAND, border=1)
-        self.bottom_sizer.Add(self.worked_on_this_time, 1, wx.ALL | wx.EXPAND, border=5)
+        self.bottom_sizer.Add(self.worked_on_this_time, 1, wx.ALL | wx.ALIGN_CENTER, border=5)
         self.bottom_sizer.Add(self.copyButton,  1, wx.ALL | wx.EXPAND, border=1)
 
         self.main_sizer.Add(self.top_sizer, 1, wx.TOP | wx.EXPAND, border=0)
         self.main_sizer.Add(self.mid_sizer,  1, wx.ALL | wx.EXPAND, border=1)
         self.main_sizer.Add(self.bottom_sizer,  1, wx.BOTTOM | wx.EXPAND, border=1)
         
-        #self.panel.SetSizer(self.main_sizer)
-        self.panel.SetSizerAndFit(self.main_sizer)
-        self.panel.Layout()
+        self.SetSizerAndFit(self.main_sizer)
+        self.Layout()
 
 
     def onEnter(self,event):
@@ -202,8 +197,18 @@ class mainFrame(wx.Frame):
             self.worked_on_this.SetLabel(f"{('{: ^40}'.format(self.current_todo_text))}")
             self.worked_on_this_time.SetLabel("0 min")
             self.current_todo.AutoComplete(self.save.get_known_todos())
-            self.main_sizer.Layout()
+            minsize = self.main_sizer.GetMinSize()
+            self.resize(minsize)
         event.Skip()
+
+    def resize(self,minsize):
+        self.SetMinSize(minsize)
+        self.Fit()
+        self.Layout()
+        self.parent.SetMinSize(minsize)
+        self.parent.Fit()
+        self.parent.Layout()
+
 
     def onCopyButton(self,event):
         now = datetime.datetime.now(datetime.timezone.utc)
@@ -245,21 +250,6 @@ class mainFrame(wx.Frame):
         dlg.Destroy() # finally destroy it when finished.
         self.elements_copied_up_to_now = len(todo_array)
         event.Skip()
-
-    def onClose(self,event):
-        if event.CanVeto():
-            todo_array = self.save.get_todo_array()
-            if self.elements_copied_up_to_now < len(todo_array):
-                out = f"Do you want to close this App?\nThere are {len(todo_array) - self.elements_copied_up_to_now} task(s) not copied up to now."
-            else:
-                out = "Do you want to close this App?"
-            if wx.MessageBox(out,
-                            "Please confirm",
-                            wx.ICON_QUESTION | wx.YES_NO) != wx.YES:
-                event.Veto()
-                return
-        event.Skip()
-
     
     def onClick(self,event):
         self.current_todo.SetSelection(-1, -1)
@@ -274,45 +264,86 @@ class mainFrame(wx.Frame):
             start_last_event = now - datetime.timedelta(seconds=1)
         delta = now - start_last_event
         self.worked_on_this_time.SetLabel(f"{int(delta.total_seconds()/60)} min")
-        self.panel.Layout()
-        event.Skip()
-    
-    def onActivate(self,event):
-        if event.GetActive():
-            #self.settingsButton.Show()
-            #self.copyButton.Show()
-            #self.worked_on_this_time.Show()
-            #self.current_todo.Show()
-            self.main_sizer.Show(self.bottom_sizer)
-            self.main_sizer.Show(self.mid_sizer)
-        else:
-            #self.settingsButton.Hide()
-            #self.copyButton.Hide()
-            #self.worked_on_this_time.Hide()
-            #self.current_todo.Hide()
-            self.main_sizer.Hide(self.bottom_sizer)
-            self.main_sizer.Hide(self.mid_sizer)
-        minsize = self.main_sizer.GetMinSize()
-        #self.panel.SetMinSize(minsize)
-        #self.main_sizer.FitInside(self.panel)
-        #self.main_sizer.Layout()
-        #self.panel.Fit()
-        #self.panel.Layout()
-        #self.panel.GetSizer().Layout()
-        #self.panel.GetParent().Layout()
-        #self.GetTopLevelParent().Layout()
-        #self.GetTopLevelParent().FitInside()
-        self.GetTopLevelParent().SetMinSize(minsize)
-
+        self.Layout()
         event.Skip()
 
     def onSettingsButton(self,event):
+        self.parent.settings_panel.main_sizer.Show(self.parent.settings_panel.bg_color_sizer)
+        self.parent.resize()
         event.Skip()
+
+class settingsPanel(wx.Panel):
+    def __init__(self, *args, **kw):
+        self.settings = kw.pop('settings',None)
+        super(settingsPanel, self).__init__(*args, **kw)
+        self.parent = self.GetParent()
+        
+        # sizer
+        self.main_sizer = wx.BoxSizer(wx.VERTICAL)
+        self.bg_color_sizer = wx.BoxSizer(wx.HORIZONTAL)
+
+        # elemets
+        self.color_picker = wx.ColourPickerCtrl(self, id=-1, colour=wx.RED,name="colourpicker")
+
+        self.bg_color_sizer.Add(self.color_picker,0,wx.ALL | wx.EXPAND, border=1)
+        self.main_sizer.Add(self.bg_color_sizer,  1, wx.ALL | wx.EXPAND, border=1)
+        self.main_sizer.Hide(self.bg_color_sizer)
+
+
+        
+        
+
+class mainFrame(wx.Frame):
+    def __init__(self, *args, **kw):
+        super(mainFrame, self).__init__(*args, **kw)
+        self.settings = Settings()
+        self.Bind(wx.EVT_CLOSE, self.onClose)
+        self.Bind(wx.EVT_ACTIVATE,self.onActivate)
+        self.main_sizer = wx.BoxSizer(wx.VERTICAL)
+        self.settings_panel = settingsPanel(self,settings=self.settings)
+        self.main_panel = mainPanel(self,settings=self.settings)
+        self.main_sizer.Add(self.main_panel, 1, wx.ALL | wx.EXPAND, border=1))
+        self.main_sizer.Add(self.settings_panel, 1, wx.ALL | wx.EXPAND, border=1))
+
+    
+    def onClose(self,event):
+        if event.CanVeto():
+            todo_array = self.main_panel.save.get_todo_array()
+            if self.main_panel.elements_copied_up_to_now < len(todo_array):
+                out = f"Do you want to close this App?\nThere are {len(todo_array) - self.main_panel.elements_copied_up_to_now} task(s) not copied up to now."
+            else:
+                out = "Do you want to close this App?"
+            if wx.MessageBox(out,
+                            "Please confirm",
+                            wx.ICON_QUESTION | wx.YES_NO) != wx.YES:
+                event.Veto()
+                return
+        event.Skip()
+
+    def onActivate(self,event):
+        if event.GetActive():
+            self.main_panel.main_sizer.Show(self.main_panel.bottom_sizer)
+            self.main_panel.main_sizer.Show(self.main_panel.mid_sizer)
+        else:
+            self.main_panel.main_sizer.Hide(self.main_panel.bottom_sizer)
+            self.main_panel.main_sizer.Hide(self.main_panel.mid_sizer)
+        minsize = self.main_panel.main_sizer.GetMinSize()
+        self.resize(minsize)
+        event.Skip()
+
+    def resize(self):
+        self.main_panel.SetMinSize(self.main_panel.main_sizer.GetMinSize())
+        self.main_panel.Fit()
+        self.main_panel.Layout()
+        # TODO: size object with add?
+        self.SetMinSize(minsize)
+        self.Fit()
+        self.Layout()
 
 if __name__ == '__main__':
     app = wx.App()
     fOnTop = wx.STAY_ON_TOP or 0
 
-    frm = mainFrame(None, title='I do this currently', style=wx.DEFAULT_FRAME_STYLE|wx.CLIP_CHILDREN|fOnTop)
+    frm = mainFrame(None, title='I do this currently', style=fOnTop)
     frm.Show()
     app.MainLoop()
