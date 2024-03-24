@@ -51,7 +51,7 @@ class Settings():
         else:
             raise AttributeError(f"'{type(self).__name__}' object has no attribute '{key}'")
     
-    def set(self,key,value):
+    def put(self,key,value):
         if key in self.settings:
             self.settings[key] = value
         else:
@@ -147,7 +147,7 @@ class mainPanel(wx.Panel):
         self.worked_on_this.SetFont(big_font)
 
         self.main_sizer = wx.BoxSizer(wx.VERTICAL)
-        self.main_sizer.Add(self.worked_on_this,  1, wx.ALL | wx.EXPAND, border=5)
+        self.main_sizer.Add(self.worked_on_this,  1, wx.ALL | wx.EXPAND, border=10)
         self.setColor()
         self.SetSizer(self.main_sizer)
         
@@ -156,6 +156,7 @@ class mainPanel(wx.Panel):
         self.worked_on_this.SetLabel(f"{('{: ^40}'.format(current_todo_text))}")
 
     def setColor(self):
+        self.SetBackgroundColour(wx.Colour( self.settings.get('bg_color') ))
         self.worked_on_this.SetBackgroundColour(wx.Colour( self.settings.get('bg_color') ))
 
 class controlPanel(wx.Panel):
@@ -164,6 +165,7 @@ class controlPanel(wx.Panel):
         super(controlPanel, self).__init__(*args, **kw)
         self.parent = self.GetParent()
         self.save = Persistency()
+        self.save.set_todo('start')
         self.current_todo_text = self.save.get_cur_todo()
         self.elements_copied_up_to_now = 0
         if platform.system() == 'Windows':
@@ -276,16 +278,16 @@ class settingsPanel(wx.Panel):
         self.bg_color_sizer = wx.BoxSizer(wx.HORIZONTAL)
 
         # elemets
-        self.color_picker = wx.ColourPickerCtrl(self, id=-1, colour=wx.RED,name="colourpicker",style=wx.CLRP_SHOW_LABEL|wx.CLRP_USE_TEXTCTRL)
-        self.color_picker.Bind(wx.EVT_COLOURPICKER_CHANGED,self.onColorClick)
+        self.color_picker = wx.ColourPickerCtrl(self, id=-1, colour=wx.Colour( self.settings.get('bg_color') ),name="bg_colourpicker",style=wx.CLRP_SHOW_LABEL|wx.CLRP_USE_TEXTCTRL)
+        self.color_picker.Bind(wx.EVT_COLOURPICKER_CHANGED,self.onColorChange)
 
-        self.bg_color_sizer.Add(self.color_picker,0,wx.ALL | wx.EXPAND, border=1)
+        self.bg_color_sizer.Add(self.color_picker,1,wx.ALL | wx.EXPAND, border=1)
 
         self.main_sizer.Add(self.bg_color_sizer,  1, wx.ALL | wx.EXPAND, border=1)
         self.SetSizer(self.main_sizer)
     
-    def onColorClick(self,event):
-        self.settings.set('bg_color',self.color_picker.GetColour())
+    def onColorChange(self,event):
+        self.settings.put('bg_color',list(self.color_picker.GetColour()[0:3]))
         event.Skip()
 
 class mainFrame(wx.Frame):
@@ -297,9 +299,9 @@ class mainFrame(wx.Frame):
         root = wx.Panel(self)
 
         self.main_sizer = wx.BoxSizer(wx.VERTICAL)
+        self.control_panel = controlPanel(root,settings=self.settings)
         self.settings_panel = settingsPanel(root,settings=self.settings)
         self.main_panel = mainPanel(root,settings=self.settings)
-        self.control_panel = controlPanel(root,settings=self.settings)
 
         self.control_panel.settingsButton.Bind(wx.EVT_BUTTON, self.onSettingsButton)
 
@@ -309,7 +311,9 @@ class mainFrame(wx.Frame):
         self.main_sizer.Hide(self.settings_panel)
         self.settings_visible = False
         root.Bind(wx.EVT_LEFT_UP, self.onClick)
-        root.Bind(wx.EVT_TEXT_ENTER, self.onEnter)
+        root.Bind(wx.EVT_TEXT_ENTER, self.onChange)
+        root.Bind(wx.EVT_BUTTON,self.onChange)
+        root.Bind(wx.EVT_COLOURPICKER_CHANGED,self.onChange)
 
         root.SetSizer(self.main_sizer)
 
@@ -319,16 +323,18 @@ class mainFrame(wx.Frame):
         self.controlPanel.current_todo.SetSelection(-1, -1)
         event.Skip()
 
-    def onEnter(self,event):
+    def onChange(self,event):
         self.main_panel.setTodo()
+        self.main_panel.setColor()
         self.modSize()
         event.Skip()
 
     def onClose(self,event):
+        self.settings.write_settings()
         if event.CanVeto():
-            todo_array = self.main_panel.save.get_todo_array()
-            if self.main_panel.elements_copied_up_to_now < len(todo_array):
-                out = f"Do you want to close this App?\nThere are {len(todo_array) - self.main_panel.elements_copied_up_to_now} task(s) not copied up to now."
+            todo_array = self.control_panel.save.get_todo_array()
+            if self.control_panel.elements_copied_up_to_now < len(todo_array):
+                out = f"Do you want to close this App?\nThere are {len(todo_array) - self.control_panel.elements_copied_up_to_now} task(s) not copied up to now."
             else:
                 out = "Do you want to close this App?"
             if wx.MessageBox(out,
@@ -377,7 +383,7 @@ class mainFrame(wx.Frame):
         for i in height_all:
             height += i
         width = max(width_all)
-        print((width,height))
+        #print((width,height))
         self.main_sizer.SetMinSize((width,height))
         self.main_sizer.Fit(self)
         self.main_sizer.Layout()
@@ -386,6 +392,6 @@ if __name__ == '__main__':
     app = wx.App()
     fOnTop = wx.STAY_ON_TOP or 0
 
-    frm = mainFrame(None, title='I do this currently', style=fOnTop)
+    frm = mainFrame(None, title='I do this currently', style=wx.CAPTION | wx.CLOSE_BOX | fOnTop)
     frm.Show()
     app.MainLoop()
