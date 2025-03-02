@@ -26,8 +26,32 @@ SETTINGS_INIT = """
 bg_color: [239,240,241]
 """
 
+EXPORT_TEMPLATE = """
+{% if header %}
+TAG VON    BIS	ANZAHL	PROJ.N	R.POS	DURCHGEFUEHRTE ARBEITEN
+{% endif %}
+{% for line in lines %}
+{{ day }}   "{{ starttime }}" "{{ endtime }}"   "{{ delta }}" "{{ prjnb }}" "{{ posnb }}" {{ job }}
+{% endfor %}
+"""
+
+
 def versiontuple(v):
     return tuple(map(int, (v.split("."))))
+
+def round_datetime(dt, minutes=15):
+    # Compute the number of minutes to round to
+    minute_offset = (dt.minute // minutes) * minutes
+    remainder = dt.minute % minutes
+
+    # If remainder is 7.5 or more, round up
+    if remainder >= minutes / 2:
+        minute_offset += minutes
+
+    # Adjust for hour overflow
+    rounded_dt = dt.replace(minute=0, second=0, microsecond=0) + datetime.timedelta(minutes=minute_offset)
+
+    return rounded_dt
 
 class Settings():
     def __init__(self):
@@ -97,14 +121,89 @@ class Persistency():
             todos.append(i[0])
         return todos
 
-    def get_todo_array(self):
+    def get_todo_array(self,set15minutes=False):
         now = datetime.datetime.now().strftime('%Y-%m-%d 00:00:00')
         todo_array = []
         res = self.cur.execute("SELECT ti.timestamp, t.todo_text FROM time as ti join todo as t ON t.id = ti.todo_id where ti.timestamp >= ?", [now])
         for i in res:
             timestamp = pytz.utc.localize(datetime.datetime.fromisoformat(i[0]))
             todo_array.append({'timestamp': timestamp, 'todo_text': i[1]})
-        return todo_array
+        if set15minutes:
+            return self._15m_todo_array(todo_array)
+        else:
+            return todo_array
+
+    def _15m_todo_array(self,todo_array):
+        # calculate the time collected for the day (real_intervall), 
+        # substract the pause (depending on the duration, there are min pauses in Germany
+        # and round it to the next 15 minutes. Fit the start day to the latest
+        # quarter in the intervall 
+        real_end = datetime.datetime.now()
+        if len(todo_array) > 0:
+            real_begin = todo_array[0]['timestamp']
+        else:
+            real_begin = real_end
+
+        real_intervall = real_end - real_begin
+
+        if real_intervall > datetime.timedelta(hours=6):
+            real_intervall -= datetime.timedelta(minutes=30)
+            pause_steps = 2
+        elif real_intervall > datetime.timedelta(hours=9):
+            real_intervall -= datetime.timedelta(minutes=45)
+            pause_steps = 3
+
+        if real_intervall.seconds % 900 != 0:
+            # round it to the next 15 minutes
+            # worktime_steps contains number of 15 minute steps 
+            worktime_steps = real_intervall.seconds % 900 + 1
+        else:
+            worktime_steps = real_intervall.seconds % 900
+
+        begin = round_datetime(real_begin)
+
+        todo_sum = {}
+        for _id,item in enumerate(todo_array):
+            if item['todo_text'] not in todo_sum:
+                todo_sum[item['todo_text']] = datetime.timedelta(seconds = 0)
+            if _id + 1 <= len(todo_array):
+                todo_sum[item['todo_text']] += ( todo_array[_id + 1] - item['timestamp'] )
+            else:
+                todo_sum[item['todo_text']] += ( real_end - item['timestamp'] )
+        
+        worktime = [None] * worktime_steps
+        count = 0
+        rest = 0
+
+        for key,value in todo_sum.items():
+            if value.seconds > rest and (value.seconds + rest) // 900 > 0:
+                worktime[count] = key
+                for i in range(1,(value.seconds + rest) // 900):
+                    worktime[count + i] = key
+                count += ((value.seconds + rest) // 900) + 1
+                rest = (value.seconds +  rest) % 900
+            elif value.seconds < rest and (value.seconds + rest) // 900 > 0:
+                worktime[count] = worktime[count - 1]
+                count += 1
+                rest = (value.seconds +  rest) % 900
+            elif value.seconds > rest and (value.seconds + rest) // 900 == 0:
+                worktime[count] = key
+                rest = (value.seconds +  rest) % 900
+            elif value.seconds < rest and (value.seconds + rest) // 900 == 0:
+                if not worktime[count]:
+                   worktime[count] = worktime[count - 1]
+                rest = (value.seconds +  rest) % 900
+
+        todo_array_15 = []
+        offset = 0
+
+        for _id, item in enumerate(worktime):
+            if begin + datetime.timedelta(seconds=(900*(_id+offset))) > begin.replace(hour=12,minute=30,second=0) or _id >= 24:
+                offset = 2
+            todo_array_15.append({'timestamp': begin + datetime.timedelta(seconds=(900*(_id+offset))), 'todo_text': item})
+
+            
+        return todo_array_15
 
     def set_todo(self,todo_text):
         res = self.cur.execute("SELECT id FROM todo WHERE todo_text like ?",[todo_text])
@@ -295,8 +394,10 @@ class mainFrame(wx.Frame):
         super(mainFrame, self).__init__(*args, **kw)
         self.settings = Settings()
         self.Bind(wx.EVT_CLOSE, self.onClose)
+        self.Bind(wx.EVT_END_SESSION, self.onShutdown)
         self.Bind(wx.EVT_ACTIVATE,self.onActivate)
         root = wx.Panel(self)
+        self.save = Persistency()
 
         self.main_sizer = wx.BoxSizer(wx.VERTICAL)
         self.control_panel = controlPanel(root,settings=self.settings)
@@ -342,7 +443,13 @@ class mainFrame(wx.Frame):
                             wx.ICON_QUESTION | wx.YES_NO) != wx.YES:
                 event.Veto()
                 return
-        event.Skip()
+        self.save.set_todo('end')
+        self.Destroy()
+
+    def onShutdown(self,event):
+        self.settings.write_settings()
+        self.save.set_todo('end')
+        self.Destroy()
 
     def onActivate(self,event):
         if event.GetActive():
